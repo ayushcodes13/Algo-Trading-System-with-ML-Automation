@@ -3,7 +3,7 @@ import numpy as np
 from xgboost import XGBClassifier
 import matplotlib.pyplot as plt
 import warnings
-from xgboost.ipynb import processed_infy, processed_reliance, processed_hdfcbank  # Assuming these are preprocessed DataFrames
+from xgboost import processed_infy, processed_reliance, processed_hdfcbank  # Assuming these are preprocessed DataFrames
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
 import requests
@@ -13,7 +13,7 @@ warnings.filterwarnings("ignore")
 
 # Google Sheets setup
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID'  # Replace with your Google Sheet ID
+SPREADSHEET_ID = '1Odtz9zgIV2kHyymcCZgN-kZHjxYCnSeQwSqMYgfgIBw'  # Replace with your Google Sheet ID
 RANGE_NAME = 'Sheet1!A1'  # Adjust sheet name and range as needed
 CREDENTIALS_FILE = 'credentials.json'  # Path to your Google API credentials JSON
 
