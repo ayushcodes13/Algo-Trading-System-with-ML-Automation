@@ -7,4 +7,5 @@ ENV/
 env.bak/
 venv.bak/
 
-credentials.jsoncredentials.json
+credentials.json
+credentials.json
