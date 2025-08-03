@@ -1,1 +1,2 @@
-# Algo-Trading-System-with-ML-Automation
+# TradeSync-ML-vs-Rule-Based-Trading-System
+
