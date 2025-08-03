@@ -7,8 +7,8 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # Configuration
-SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID'  # Replace with your Google Sheet ID
-CREDENTIALS_FILE = 'stockbot-credentials.json'  # Path to your credentials JSON
+SPREADSHEET_ID = '1Odtz9zgIV2kHyymcCZgN-kZHjxYCnSeQwSqMYgfgIBw'  # Replace with your Google Sheet ID
+CREDENTIALS_FILE = 'credentials.json'  # Path to your credentials JSON
 SHEET_NAME = 'Sheet1'  # Adjust if your sheet has a different name
 RANGE_NAME = f'{SHEET_NAME}!A1'
 
