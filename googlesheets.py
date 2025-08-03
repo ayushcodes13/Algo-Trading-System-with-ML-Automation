@@ -10,16 +10,19 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # Configuration
-SPREADSHEET_ID = '1Odtz9zgIV2kHyymcCZgN-kZHjxYCnSeQwSqMYgfgIBw'  # Replace with your Google Sheet ID
-CREDENTIALS_FILE = 'credentials.json'  # Path to your credentials JSON
-SHEET_NAME = 'Sheet1'  # Adjust if your sheet has a different name
-RANGE_NAME = f'{SHEET_NAME}!A1'
+SPREADSHEET_ID = '1Odtz9zgIV2kHyymcCZgN-kZHjxYCnSeQwSqMYgfgIBw'
+CREDENTIALS_FILE = 'credentials.json'
 SYMBOLS = ["INFY.NS", "RELIANCE.NS", "HDFCBANK.NS"]
 PERIOD = "5y"
 MODEL_FILES = {
     "INFY.NS": "Stats/ML Trained/INFY_model.json",
     "RELIANCE.NS": "Stats/ML Trained/RELIANCE_model.json",
     "HDFCBANK.NS": "Stats/ML Trained/HDFCBANK_model.json"
+}
+TABS = {
+    'trade_log': 'Trade Log',
+    'summary_pnl': 'Summary P&L',
+    'win_ratio': 'Win Ratio'
 }
 
 # Define backtest period (timezone-aware)
@@ -61,11 +64,19 @@ def init_google_sheets():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
     client = gspread.authorize(creds)
-    sheet = client.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
-    return sheet
+    spreadsheet = client.open_by_key(SPREADSHEET_ID)
+    return spreadsheet
 
-# Append data to Google Sheet
-def append_to_google_sheet(sheet, symbol, data):
+# Create or get worksheet
+def get_or_create_worksheet(spreadsheet, tab_name):
+    try:
+        worksheet = spreadsheet.worksheet(tab_name)
+    except gspread.exceptions.WorksheetNotFound:
+        worksheet = spreadsheet.add_worksheet(title=tab_name, rows=100, cols=20)
+    return worksheet
+
+# Append trade log to Google Sheet
+def append_trade_log(sheet, symbol, data):
     headers = ['Date', 'Symbol', 'Close Price', 'RSI', 'MACD', 'SMA_20', 'EMA_20', 'Volatility', 'Trade Return']
     if not sheet.get_all_values():
         sheet.append_row(headers)
@@ -75,17 +86,37 @@ def append_to_google_sheet(sheet, symbol, data):
         values.append([
             index.strftime('%Y-%m-%d %H:%M:%S%z'),
             symbol,
-            row['Close'],
-            row['RSI'],
-            row['MACD'],
-            row['SMA_20'],
-            row['EMA_20'],
-            row['Volatility'],
-            row['Trade_Return']
+            float(row['Close']),  # Ensure float for JSON serialization
+            float(row['RSI']),
+            float(row['MACD']),
+            float(row['SMA_20']),
+            float(row['EMA_20']),
+            float(row['Volatility']),
+            float(row['Trade_Return'])
         ])
     
     sheet.append_rows(values)
-    print(f"Appended {len(values)} trades for {symbol} to Google Sheet")
+    print(f"Appended {len(values)} trades for {symbol} to Trade Log")
+
+# Append summary P&L to Google Sheet
+def append_summary_pnl(sheet, symbol, total_trades, total_pnl, avg_return):
+    headers = ['Symbol', 'Total Trades', 'Total P&L', 'Average Return']
+    if not sheet.get_all_values():
+        sheet.append_row(headers)
+    
+    values = [[symbol, int(total_trades), float(total_pnl), float(avg_return)]]
+    sheet.append_rows(values)
+    print(f"Appended P&L summary for {symbol} to Summary P&L")
+
+# Append win ratio to Google Sheet
+def append_win_ratio(sheet, symbol, profitable_trades, total_trades, win_ratio):
+    headers = ['Symbol', 'Profitable Trades', 'Total Trades', 'Win Ratio']
+    if not sheet.get_all_values():
+        sheet.append_row(headers)
+    
+    values = [[symbol, int(profitable_trades), int(total_trades), f"{win_ratio:.2%}"]]
+    sheet.append_rows(values)
+    print(f"Appended win ratio for {symbol} to Win Ratio")
 
 # Agreement analysis with Google Sheets integration
 def agreement_analysis_with_gsheets(processed_data, symbol, model_file):
@@ -112,23 +143,31 @@ def agreement_analysis_with_gsheets(processed_data, symbol, model_file):
     
     df_agreed = test[(test["ML_Prediction"] == 1) & (test["Buy_Signal"] == 1)].copy()
     df_agreed["Trade_Return"] = ((df_agreed["Close"].shift(-1) - df_agreed["Close"]) / 
-                                df_agreed["Close"] - 0.001)
+                                 df_agreed["Close"] - 0.001)
     df_agreed = df_agreed.dropna(subset=["Trade_Return"])
     
-    total_agreed = len(df_agreed)
-    profitable_agreed = (df_agreed["Trade_Return"] > 0).sum()
-    win_ratio_agreed = profitable_agreed / total_agreed if total_agreed > 0 else 0
-    avg_return_agreed = df_agreed["Trade_Return"].mean() if total_agreed > 0 else 0
+    total_trades = len(df_agreed)
+    profitable_trades = (df_agreed["Trade_Return"] > 0).sum()
+    win_ratio = profitable_trades / total_trades if total_trades > 0 else 0
+    total_pnl = df_agreed["Trade_Return"].sum() if total_trades > 0 else 0
+    avg_return = df_agreed["Trade_Return"].mean() if total_trades > 0 else 0
     
     print("\n=== Agreement Trade Details (ML and Rule-Based Both Yes) ===")
-    print(f"Total Agreement Trades: {total_agreed}")
-    print(f"Profitable Trades: {profitable_agreed}")
-    print(f"Win Ratio: {win_ratio_agreed:.2%}")
-    print(f"Avg Return: {avg_return_agreed:.2%}")
+    print(f"Total Agreement Trades: {total_trades}")
+    print(f"Profitable Trades: {profitable_trades}")
+    print(f"Win Ratio: {win_ratio:.2%}")
+    print(f"Total P&L: {total_pnl:.2%}")
+    print(f"Average Return: {avg_return:.2%}")
     
-    if total_agreed > 0:
-        sheet = init_google_sheets()
-        append_to_google_sheet(sheet, symbol, df_agreed)
+    if total_trades > 0:
+        spreadsheet = init_google_sheets()
+        trade_log_sheet = get_or_create_worksheet(spreadsheet, TABS['trade_log'])
+        summary_pnl_sheet = get_or_create_worksheet(spreadsheet, TABS['summary_pnl'])
+        win_ratio_sheet = get_or_create_worksheet(spreadsheet, TABS['win_ratio'])
+        
+        append_trade_log(trade_log_sheet, symbol, df_agreed)
+        append_summary_pnl(summary_pnl_sheet, symbol, total_trades, total_pnl, avg_return)
+        append_win_ratio(win_ratio_sheet, symbol, profitable_trades, total_trades, win_ratio)
     
     df_agreed.to_csv(f"{symbol}_agreement_trades.csv")
     return df_agreed
