@@ -1,188 +1,255 @@
-# TradeSync-ML-vs-Rule-Based-Trading-System
+# 📊 XGBoost Stock Trading Notebook Documentation
 
-Overview
-This project automates the generation and logging of stock trading signals for three Indian stocks (INFY.NS, RELIANCE.NS, HDFCBANK.NS) using a combination of machine learning (XGBoost) and rule-based strategies. The script fetches historical stock data, processes technical indicators, identifies agreement trades (where ML and rule-based signals align), and logs results to a Google Sheet with three tabs: Trade Log, Summary P&L, and Win Ratio. The project is designed for backtesting over a specified period (February 1, 2025, to July 31, 2025) and is intended for use in a financial analysis or internship presentation context.
-Features
+Welcome to the documentation for the Jupyter notebook **xgboost.ipynb**, which implements, visualizes, and compares both rule-based and machine learning (XGBoost) strategies for predicting next-day movement (up/down) of selected Indian stocks using technical indicators. This notebook is designed to help you explore the interplay between technical signals and modern ML models in stock trading.
 
-Data Fetching: Retrieves 5 years of historical stock data using yfinance for INFY.NS, RELIANCE.NS, and HDFCBANK.NS.
-Technical Indicators: Calculates RSI, MACD, SMA (20, 50), EMA (20), and Volatility for signal generation.
-Trading Signals: Combines rule-based signals (RSI < 35, SMA_20 > SMA_50) with ML predictions (XGBoost models).
-Google Sheets Automation:
-Trade Log: Logs detailed trade signals (Date, Symbol, Close Price, RSI, MACD, SMA_20, EMA_20, Volatility, Trade Return).
-Summary P&L: Logs per-stock metrics (Symbol, Total Trades, Total P&L, Average Return).
-Win Ratio: Logs per-stock win metrics (Symbol, Profitable Trades, Total Trades, Win Ratio).
+---
 
+## 🗂️ Index
 
-Output: Saves agreement trades to CSV files (e.g., INFY.NS_agreement_trades.csv) and logs metrics to the console.
+1. [Overview](#overview)
+2. [Data Collection & Initialization](#data-collection--initialization)
+3. [Data Visualization](#data-visualization)
+4. [Technical Indicator Preprocessing](#technical-indicator-preprocessing)
+5. [Feature Engineering](#feature-engineering)
+6. [Model Training & Backtesting](#model-training--backtesting)
+    - [ML (XGBoost) Approach](#ml-xgboost-approach)
+    - [Rule-Based Strategy](#rule-based-strategy)
+7. [Agreement Analysis](#agreement-analysis)
+8. [Evaluation Metrics](#evaluation-metrics)
+9. [Trading Pipeline Flowchart](#trading-pipeline-flowchart)
+10. [XGBoost Model API (Model Asset)](#xgboost-model-api-model-asset)
+11. [Best Practices & Limitations](#best-practices--limitations)
+12. [References](#references)
 
-Prerequisites
+---
 
-Python 3.10+
-Dependencies: Install via pip install gspread oauth2client pandas numpy yfinance ta xgboost
-Google Cloud Setup:
-Enable the Google Sheets API in your Google Cloud project (Google Cloud Console).
-Create a service account and download the JSON key file as credentials.json.
-Share the target Google Sheet (https://docs.google.com/spreadsheets/d/1Odtz9zgIV2kHyymcCZgN-kZHjxYCnSeQwSqMYgfgIBw) with the service account’s client_email (Editor permissions).
+## 1. <a name="overview"></a>Overview
 
+This notebook demonstrates a **quantitative trading pipeline** that answers the question:
+> *Can simple technical signals be improved upon by machine learning for next-day price direction prediction?*
 
-Model Files: Pre-trained XGBoost models in /Stats/ML Trained/:
-INFY_model.json
-RELIANCE_model.json
-HDFCBANK_model.json
+It does this across three large Indian stocks:
+- **RELIANCE.NS** (Reliance Industries)
+- **HDFCBANK.NS** (HDFC Bank)
+- **INFY.NS** (Infosys)
 
+The notebook fetches historical prices, computes technical indicators, creates trading signals, and compares a rule-based trading approach with an XGBoost classifier, then assesses where they agree (consensus signals).
 
-Directory Structure:Stock market project/
-├── googlesheets.py
-├── credentials.json
-├── Stats/
-│   └── ML Trained/
-│       ├── INFY_model.json
-│       ├── RELIANCE_model.json
-│       └── HDFCBANK_model.json
-├── INFY.NS_agreement_trades.csv (output)
-├── RELIANCE.NS_agreement_trades.csv (output)
-└── output.txt (console output)
+---
 
+## 2. <a name="data-collection--initialization"></a>Data Collection & Initialization
 
+### Key Steps:
 
-Setup
+- **Imports**: yfinance, pandas, numpy, matplotlib, seaborn, plotly, scikit-learn, ta (technical analysis), xgboost, and utility modules.
+- **Stock Selection**:
+    ```python
+    symbols = ["RELIANCE.NS", "HDFCBANK.NS", "INFY.NS"]
+    ```
+- **Fetching Metadata**:
+    - Loops through each symbol, downloads metadata (name, market, sector), and prints it.
+    - Uses yfinance `Ticker.info`.
 
-Clone or Download:
-Place googlesheets.py in /Users/your_username/Desktop/Stock market project/.
+**Example Output:**
+```
+Symbol: RELIANCE.NS
+Name: RELIANCE INDUSTRIES LTD
+Market: in_market
+Sector: Energy
+------------------------------
+```
 
+---
 
-Install Dependencies:pip install gspread oauth2client pandas numpy yfinance ta xgboost
+## 3. <a name="data-visualization"></a>Data Visualization
 
+- **Price & Volume Chart**: For each symbol, fetches 5 years of historical OHLCV data and plots **Close price** and **Volume** on dual y-axes.
+- **Tabular Preview**: Displays the first and last 5 rows for a 6-month window.
 
-Set Up Google Sheets:
-Ensure the Google Sheet (https://docs.google.com/spreadsheets/d/1Odtz9zgIV2kHyymcCZgN-kZHjxYCnSeQwSqMYgfgIBw) is shared with the client_email from credentials.json.
-Verify the Google Sheets API is enabled in your Google Cloud project (ID: 207754761869).
+**Visualization Example:**
 
+- The plot shows the evolution of price and volume, highlighting regime changes, trends, and volatility.
 
-Prepare Model Files:
-Ensure XGBoost model files are in /Stats/ML Trained/. If missing, train models using your training script and save them:infy_model.save_model("Stats/ML Trained/INFY_model.json")
-reliance_model.save_model("Stats/ML Trained/RELIANCE_model.json")
-hdfcbank_model.save_model("Stats/ML Trained/HDFCBANK_model.json")
+---
+
+## 4. <a name="technical-indicator-preprocessing"></a>Technical Indicator Preprocessing
 
+**For each stock, the notebook computes:**
+- **RSI (14 days)**
+- **MACD** and **MACD Signal**
+- **SMA 20, SMA 50**
+- **EMA 20**
+- **Volatility**: 10-day rolling std of Close
+- **Buy_Signal**: (RSI < 35) and (SMA_20 > SMA_50)
+- **Target**: Next-day close > today’s close (binary classification)
 
+**Returns a DataFrame with these features and signals.**
 
+---
 
-Activate Virtual Environment (if using):source "/Users/your_username/Desktop/Stock market project/venv/bin/activate"
-
-
-
-Usage
-
-Run the Script:"/Users/your_username/Desktop/Stock market project/venv/bin/python" "/Users/your_username/Desktop/Stock market project/googlesheets.py" > output.txt
-
-
-Output:
-Console: Displays data fetching, preprocessing, and agreement analysis metrics (e.g., Total Trades, Win Ratio, Total P&L, Average Return).
-Google Sheet: Populates three tabs:
-Trade Log: Detailed trade signals (e.g., 2 trades for INFY.NS, 3 for RELIANCE.NS).
-Summary P&L: Per-stock P&L metrics (e.g., INFY.NS: -0.33% total P&L, RELIANCE.NS: 19.30% total P&L).
-Win Ratio: Per-stock win metrics (e.g., INFY.NS: 0/2, 0%; RELIANCE.NS: 1/3, 33.33%).
-
-
-CSV Files: Saves trade details to INFY.NS_agreement_trades.csv and RELIANCE.NS_agreement_trades.csv.
-
-
-Clear Google Sheet Tabs (optional, to avoid duplicates):
-Delete or clear Trade Log, Summary P&L, and Win Ratio tabs before rerunning to start fresh.
-
-
-
-Sample Output
-
-Console Output (saved to output.txt):Fetching data for INFY.NS
-Processed data for INFY.NS: 1191 rows
-Data from 2020-10-12 00:00:00+05:30 to 2025-08-01 00:00:00+05:30
-...
-=== Agreement Analysis for INFY.NS ===
-Total Agreement Trades: 2
-Profitable Trades: 0
-Win Ratio: 0.00%
-Total P&L: -0.33%
-Average Return: -0.17%
-Appended 2 trades for INFY.NS to Trade Log
-Appended P&L summary for INFY.NS to Summary P&L
-Appended win ratio for INFY.NS to Win Ratio
-...
-=== Agreement Analysis for RELIANCE.NS ===
-Total Agreement Trades: 3
-Profitable Trades: 1
-Win Ratio: 33.33%
-Total P&L: 19.30%
-Average Return: 6.43%
-...
-=== Agreement Analysis for HDFCBANK.NS ===
-Total Agreement Trades: 0
-Profitable Trades: 0
-Win Ratio: 0.00%
-Total P&L: 0.00%
-
-
-Google Sheet (https://docs.google.com/spreadsheets/d/1Odtz9zgIV2kHyymcCZgN-kZHjxYCnSeQwSqMYgfgIBw):
-Trade Log:Date,Symbol,Close Price,RSI,MACD,SMA_20,EMA_20,Volatility,Trade Return
-2025-07-25 00:00:00+0530,INFY.NS,1515.699951,32.41530826,-11.68512472,1595.995001,1583.630166,24.72885802,-0.0008020394288
-2025-07-28 00:00:00+0530,INFY.NS,1516,32.516792,-15.45198857,1591.704999,1577.189198,30.6678026,-0.002517182604
-2025-04-07 00:00:00+0530,RELIANCE.NS,1165.699951,31.04122502,-3.849582624,1252.377496,1241.519657,40.77167865,0.2109757296
-2025-07-22 00:00:00+0530,RELIANCE.NS,1412.800049,32.10038514,-2.034868081,1496.495007,1476.586946,33.92219675,-0.01593494969
-2025-07-25 00:00:00+0530,RELIANCE.NS,1391.699951,30.41672261,-14.49091179,1483.554999,1458.100057,38.04836209,-0.002077818533
-
-
-Summary P&L:Symbol,Total Trades,Total P&L,Average Return
-INFY.NS,2,-0.0033192220328,-0.0016596110164
-RELIANCE.NS,3,0.1929629614,0.06432098713
-HDFCBANK.NS,0,0.0,0.0
-
-
-Win Ratio:Symbol,Profitable Trades,Total Trades,Win Ratio
-INFY.NS,0,2,0.00%
-RELIANCE.NS,1,3,33.33%
-HDFCBANK.NS,0,0,0.00%
-
-
-
-
-
-Troubleshooting
-
-TypeError: int64 not JSON serializable:
-Resolved by converting int64 values to Python int in append_win_ratio.
-If persists, check other numeric fields and convert to float or int.
-
-
-PermissionError:
-Ensure the Google Sheet is shared with the client_email from credentials.json.
-Verify the Google Sheets API is enabled in the Google Cloud project (ID: 207754761869).
-
-
-Model Not Found:
-Confirm model files exist in /Stats/ML Trained/. Regenerate using your training script if missing.
-
-
-No Data Fetched:
-Test yfinance:import yfinance as yf
-print(yf.Ticker("INFY.NS").history(period="5y").head())
-
-
-Ensure internet connectivity and correct symbols (INFY.NS, not INFY).
-
-
-No Trades for HDFCBANK.NS:
-Expected (0 trades). To generate trades, adjust rsi_threshold in preprocess_stock (e.g., rsi_threshold=40).
-
-
-
-Notes
-
-Security: Keep credentials.json private. Share the Google Sheet as Viewer for submission.
-Duplicates: Clear Google Sheet tabs before rerunning to avoid duplicate rows.
-Assignment Context: Designed for an internship presentation, demonstrating automated trade signal logging to Google Sheets with detailed metrics.
-
-Author
-
-Devayush Rout
-Created: August 2025
-Purpose: Internship project for stock trading signal automation
+## 5. <a name="feature-engineering"></a>Feature Engineering
+
+- **Feature Set**:
+    - RSI, MACD, MACD_Signal, SMA_20, EMA_20, Volatility
+- **Target**:
+    - Next-day price movement (binary: 1 = up, 0 = down)
+- **Rule-based Logic**:
+    - Buy signal when RSI < 35 **and** SMA_20 > SMA_50
+
+---
+
+## 6. <a name="model-training--backtesting"></a>Model Training & Backtesting
+
+### <a name="ml-xgboost-approach"></a>ML (XGBoost) Approach
+
+- **Train/Test Split**:
+    - **Train**: All data before 1 Feb 2025
+    - **Test**: 1 Feb 2025 – 31 Jul 2025
+- **Searches best XGBoost hyperparameters** via **TimeSeriesSplit** and precision scoring.
+- **Metrics**: Accuracy, Precision, Recall, F1, Confusion Matrix.
+
+**Example Output:**
+```
+Best Parameters: {'learning_rate': 0.01, 'max_depth': 4, 'n_estimators': 50}
+Accuracy: 48.36%
+Precision: 48.98%
+Recall: 78.69%
+F1-Score: 60.38%
+```
+- **Confusion Matrix**: Plotted for each stock.
+
+### <a name="rule-based-strategy"></a>Rule-Based Strategy
+
+- **Simulates trading** whenever the logic signal is True.
+- **Trade_Return**: (next day's close – today’s close) / today’s close – 0.1% (transaction cost)
+- **Performance metrics**: total trades, win ratio, average profit/loss, cumulative return.
+- **Cumulative return plot**: Shows compounding of rule-based trades.
+
+---
+
+## 7. <a name="agreement-analysis"></a>Agreement Analysis
+
+- **Consensus trades**: Days when both the ML model **and** the rule-based logic say 'buy'.
+- **Agreement Metrics**:
+    - Total agreement trades
+    - Profitable agreement trades
+    - Win ratio
+    - Average return
+    - Cumulative return plot for agreement-only trades
+
+---
+
+## 8. <a name="evaluation-metrics"></a>Evaluation Metrics
+
+| Metric           | Description                                           |
+|------------------|------------------------------------------------------|
+| Accuracy         | Correct predictions / total predictions               |
+| Precision        | Correct “up” predictions / all “up” predictions       |
+| Recall           | Correct “up” predictions / all actual “up” instances  |
+| F1-Score         | Harmonic mean of precision and recall                 |
+| Win Ratio        | Profitable trades / total trades                      |
+| Avg Profit/Loss  | Average % gain/loss per trade                         |
+| Cumulative Return| Compound return from following the strategy           |
+
+---
+
+## 9. <a name="trading-pipeline-flowchart"></a>Trading Pipeline Flowchart
+
+**Below is a diagram showing the pipeline from data preprocessing to trade execution.**
+
+```mermaid
+flowchart TD
+    A[Raw Stock Price Data] --> B[Technical Indicator Calculation]
+    B --> C[Feature Engineering]
+    C --> D1[ML Model (XGBoost) Prediction]
+    C --> D2[Rule-Based Logic Signal]
+    D1 --> E[Signal Agreement Analysis]
+    D2 --> E
+    E --> F{Consensus?}
+    F -- Yes --> G[Simulated Trade (Agreement)]
+    F -- No --> H[No Trade]
+    G --> I[Backtest Performance Metrics]
+    H --> I
+```
+
+---
+
+## 10. <a name="xgboost-model-api-model-asset"></a>XGBoost Model API (Model Asset)
+
+For each stock, the trained XGBoost model is saved as a JSON asset (e.g., `INFY_model.json`). To use the model, load and call `predict()` with the 6-feature input.
+
+```api
+{
+    "title": "Stock Direction Prediction (XGBoost Model)",
+    "description": "Predicts next-day price direction (up/down) based on technical indicators.",
+    "method": "POST",
+    "baseUrl": "http://localhost:8501",
+    "endpoint": "/predict",
+    "headers": [
+        {
+            "key": "Content-Type",
+            "value": "application/json",
+            "required": true
+        }
+    ],
+    "bodyType": "json",
+    "requestBody": "{\n  \"RSI\": 31.27,\n  \"MACD\": -5.33,\n  \"MACD_Signal\": -4.21,\n  \"SMA_20\": 1567.32,\n  \"EMA_20\": 1571.88,\n  \"Volatility\": 11.09\n}",
+    "responses": {
+        "200": {
+            "description": "Prediction result",
+            "body": "{\n  \"prediction\": 0\n}"
+        }
+    }
+}
+```
+*Here, 0 = down, 1 = up.*
+
+---
+
+## 11. <a name="best-practices--limitations"></a>Best Practices & Limitations
+
+### Best Practices
+- **Always use a strictly out-of-sample backtest period.**
+- **Tune ML model hyperparameters using time-series cross-validation.**
+- **Incorporate transaction costs in backtests.**
+- **Compare ML with simple rules to avoid overfitting hype.**
+
+### Limitations
+- **No risk management:** Position sizing, stop-losses, and slippage not modeled.
+- **No walk-forward retraining:** Models are not retrained during backtest.
+- **No feature selection or ensembling:** Only basic technicals used.
+- **No capital constraints or realistic brokerage simulation.**
+- **Small sample in backtest window may not generalize.**
+
+---
+
+## 12. <a name="references"></a>References
+
+- [XGBoost Documentation](https://xgboost.readthedocs.io/)
+- [TA-Lib & Technical Analysis Library](https://technical-analysis-library-in-python.readthedocs.io/en/latest/)
+- [yfinance Documentation](https://pypi.org/project/yfinance/)
+- [Scikit-learn Metrics](https://scikit-learn.org/stable/modules/model_evaluation.html)
+- [Investopedia: RSI, MACD, SMA](https://www.investopedia.com/)
+
+---
+
+## 📝 Summary Table
+
+| Stock         | ML Model Accuracy | Rule-Based Win Ratio | Agreement Trades | Agreement Win Ratio |
+| ------------- | ---------------- | -------------------- | ---------------- | ------------------ |
+| INFY.NS       | 48.36%           | 0.00%                | 2                | 0.00%              |
+| RELIANCE.NS   | 50.82%           | 40.00%               | 3                | 33.33%             |
+| HDFCBANK.NS   | 45.90%           | 0.00%                | 0                | 0.00%              |
+
+---
+
+## 📌 Key Takeaways
+
+- **Both ML (XGBoost) and simple logic are very noisy for next-day direction, even when tuned and filtered.**
+- **"Agreement" (consensus) trades are rare and not consistently profitable (in this test window).**
+- **Visualization shows the signals are sparse and gains are often offset by losses, especially with transaction costs.**
+- **Despite the power of ML, overfitting and limited predictability in short-term price movement remain major challenges.**
+
+---
+
+**This notebook provides a full, reproducible pipeline for technical trading ML research, and exposes the reality of predictive edge in liquid stocks. Feel free to use it as a base for deeper studies, adding more features, or more realistic trading simulation!**
